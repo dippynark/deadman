@@ -1,18 +1,19 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
+	"github.com/xconstruct/go-pushbullet"
+)
+
+const (
+	tickPeriod = 2 * 60 * 12 // Number of 30s intervals in 12 hours
 )
 
 var (
@@ -46,8 +47,8 @@ func init() {
 	)
 }
 
-func NewDeadMan(pinger <-chan time.Time, interval time.Duration, amURL string, logger log.Logger) (*Deadman, error) {
-	return newDeadMan(pinger, interval, amNotifier(amURL), logger), nil
+func NewDeadMan(pinger <-chan time.Time, interval time.Duration, pushbulletAccessToken, pushbulletDeviceNickname string, logger log.Logger) (*Deadman, error) {
+	return newDeadMan(pinger, interval, pushbulletNotifier(pushbulletAccessToken, pushbulletDeviceNickname), logger), nil
 }
 
 type Deadman struct {
@@ -56,16 +57,17 @@ type Deadman struct {
 	ticker   *time.Ticker
 	closer   chan struct{}
 
-	notifier func() error
+	notifier func(bool) error
 
 	logger log.Logger
 }
 
-func newDeadMan(pinger <-chan time.Time, interval time.Duration, notifier func() error, logger log.Logger) *Deadman {
+func newDeadMan(pinger <-chan time.Time, interval time.Duration, notifier func(bool) error, logger log.Logger) *Deadman {
 	return &Deadman{
 		pinger:   pinger,
 		interval: interval,
 		notifier: notifier,
+		logger:   logger,
 		closer:   make(chan struct{}),
 	}
 }
@@ -74,6 +76,8 @@ func (d *Deadman) Run() error {
 	d.ticker = time.NewTicker(d.interval)
 
 	skip := false
+	firing := false
+	tickCounter := 0
 
 	for {
 		select {
@@ -81,16 +85,35 @@ func (d *Deadman) Run() error {
 			ticksTotal.Inc()
 
 			if !skip {
-				ticksNotified.Inc()
-				if err := d.notifier(); err != nil {
-					failedNotifications.Inc()
-					level.Error(d.logger).Log("err", err)
+				if tickCounter == 0 {
+					ticksNotified.Inc()
+					if err := d.notifier(true); err != nil {
+						failedNotifications.Inc()
+						level.Error(d.logger).Log("err", err)
+						tickCounter--
+					} else {
+						firing = true
+					}
+				}
+				tickCounter++
+				if tickCounter == tickPeriod {
+					tickCounter = 0
 				}
 			}
 			skip = false
 
 		case <-d.pinger:
 			skip = true
+			tickCounter = 0
+			if firing {
+				ticksNotified.Inc()
+				if err := d.notifier(false); err != nil {
+					failedNotifications.Inc()
+					level.Error(d.logger).Log("err", err)
+				} else {
+					firing = false
+				}
+			}
 
 		case <-d.closer:
 			break
@@ -108,31 +131,42 @@ func (d *Deadman) Stop() {
 	d.closer <- struct{}{}
 }
 
-func amNotifier(amURL string) func() error {
-	alerts := []*model.Alert{{
-		Labels: model.LabelSet{
-			model.LabelName("alertname"): model.LabelValue("DeadmanDead"),
-		},
-	}}
+func pushbulletNotifier(pushbulletAccessToken, pushbulletDeviceNickname string) func(bool) error {
 
-	b, err := json.Marshal(alerts)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(2)
-	}
+	return func(alert bool) error {
 
-	return func() error {
-		client := &http.Client{}
-		resp, err := client.Post(amURL, "application/json", bytes.NewReader(b))
+		message := "Receiving Alertmanager alerts again"
+		if alert {
+			message = "Stopped receiving Alertmanager alerts"
+		}
+
+		// create pushbullet client
+		pb := pushbullet.New(pushbulletAccessToken)
+
+		devices, err := pb.Devices()
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
 
-		if resp.StatusCode/100 != 2 {
-			return fmt.Errorf("bad response status %v", resp.Status)
+		var merr error
+
+		messageSent := false
+		for _, device := range devices {
+			if device.Nickname == pushbulletDeviceNickname {
+				// push note
+				err = pb.PushNote(device.Iden, "Deadman's Snitch", message)
+				if err != nil {
+					merr = multierror.Append(merr, err)
+					continue
+				}
+				messageSent = true
+			}
 		}
 
-		return nil
+		if !messageSent {
+			merr = fmt.Errorf("failed to send Pushbullet message to device with nickname %s", pushbulletDeviceNickname)
+		}
+
+		return merr
 	}
 }
