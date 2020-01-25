@@ -64,6 +64,22 @@
   version = "v1.2.0"
 
 [[projects]]
+  digest = "1:0ade334594e69404d80d9d323445d2297ff8161637f9b2d347cc6973d2d6f05b"
+  name = "github.com/hashicorp/errwrap"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "8a6fb523712970c966eefc6b39ed2c5e74880354"
+  version = "v1.0.0"
+
+[[projects]]
+  digest = "1:f668349b83f7d779567c880550534addeca7ebadfdcf44b0b9c39be61864b4b7"
+  name = "github.com/hashicorp/go-multierror"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "886a7fbe3eb1c874d46f623bfa70af45f425b3d1"
+  version = "v1.0.0"
+
+[[projects]]
   branch = "master"
   digest = "1:a64e323dc06b73892e5bb5d040ced475c4645d456038333883f58934abbf6f72"
   name = "github.com/kr/logfmt"
@@ -134,6 +150,14 @@
   revision = "05ee40e3a273f7245e8777337fc7b46e533a9a92"
 
 [[projects]]
+  branch = "master"
+  digest = "1:ff865c5772fd1d5dfc30dfd225f9faf545661c35aa774c972411a2ec4af7cd2a"
+  name = "github.com/xconstruct/go-pushbullet"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "67759df45fbbd23cbe3d5cdc6df7891c5b663cb8"
+
+[[projects]]
   digest = "1:c06d9e11d955af78ac3bbb26bd02e01d2f61f689e1a3bce2ef6fb683ef8a7f2d"
   name = "gopkg.in/alecthomas/kingpin.v2"
   packages = ["."]
@@ -147,12 +171,14 @@
   input-imports = [
     "github.com/go-kit/kit/log",
     "github.com/go-kit/kit/log/level",
+    "github.com/hashicorp/go-multierror",
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/prometheus/common/model",
     "github.com/prometheus/common/promlog",
     "github.com/prometheus/common/promlog/flag",
+    "github.com/xconstruct/go-pushbullet",
     "gopkg.in/alecthomas/kingpin.v2",
   ]
   solver-name = "gps-cdcl"
